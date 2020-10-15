@@ -84,7 +84,7 @@ def read_fastq(fastq):
     """
     with open(fastq, "r") as filin:
         for _ in filin:
-            yield next(filin)
+            yield next(filin).strip()
             next(filin)
             next(filin)
 
@@ -136,6 +136,12 @@ def build_graph(kmer_dico):
     """
     Creation of a graph of kmer.
 
+    Example:
+      k-mer ACTG see 10 times
+
+      Node ACT ------> Node CTG
+              weight=10
+
     Parameter
     ---------
     kmer_dico: dictionary
@@ -143,32 +149,157 @@ def build_graph(kmer_dico):
 
     Return
     ------
-    directed_graph: nx graph
+    graph: nx graph
         a graph
     """
-    directed_graph = nx.DiGraph()
+    graph = nx.DiGraph()
     for kmer, poids in kmer_dico.items():
-        directed_graph.add_edge(kmer[:-1], kmer[1:], weight=poids)
+        graph.add_edge(kmer[:-1], kmer[1:], weight=poids)
 
     # Affichage du graphe: a ne pas faire sur le jeu de données entier
-    # plt.subplot(111)
-    # nx.draw(directed_graph, with_labels=True, font_weight='bold')
-    # plt.savefig("graph")
-    return directed_graph
+    plt.subplot(111)
+    nx.draw(graph, with_labels=True, font_weight='bold')
+    plt.savefig("graph")
+    return graph
 
 
-def save_graph(directed_graph):
+def save_graph(graph):
     """
     Save graph in a file.
 
     Parameter
     ---------
-    directed_graph: nexgraph
+    graph: nexgraph
         a graph
     """
     plt.subplot(111)
-    nx.draw(directed_graph, with_labels=True, font_weight='bold')
+    nx.draw(graph, with_labels=True, font_weight='bold')
     plt.savefig("graph")
+
+
+def get_starting_nodes(graph):
+    """
+    Parameter
+    ---------
+    graph: nexgraph
+        a graph
+
+    Return
+    ------
+    starting_nodes: list
+        list of starting nodes
+    """
+    nodes, starting_nodes = list(graph.nodes()), []
+    for node in nodes:
+        if not list(graph.predecessors(node)):
+            starting_nodes.append(node)
+    return starting_nodes
+
+
+def get_sink_nodes(graph):
+    """
+    Parameter
+    ---------
+    graph: nexgraph
+        a graph
+
+    Return
+    ------
+    sink_nodes: list
+        list of output nodes
+    """
+    nodes, sink_nodes = list(graph.nodes()), []
+    for node in nodes:
+        if not list(graph.successors(node)):
+            sink_nodes.append(node)
+    return sink_nodes
+
+
+def get_contigs(graph, starting_nodes, sink_nodes):
+    """
+    Déterminer chaque chemin d'un graphe entre un starting & sink nodes.
+
+    Parameter
+    ---------
+    graph: nexgraph
+        a graph
+    starting_nodes: list
+        list of input nodes
+    sink_nodes: list
+        list of output nodes
+
+    Return
+    ------
+    contigs: list
+        list of tupple (contig, contig size)
+    """
+    contigs = []
+    for starting in starting_nodes:
+        for sink in sink_nodes:
+            tmp = list(nx.all_simple_paths(graph, starting, sink))
+
+            if tmp:
+                contig = tmp[0][0]
+                for i in range(1, len(tmp[0])):
+                    contig += tmp[0][i][-1]
+                contigs.append((contig, len(contig)))
+
+    return contigs
+
+
+def save_contigs(output_file, contigs):
+    """
+
+    Parameter
+    --------
+    output_file: str
+        an output file
+    contigs: list
+        list of tupple (contig, contig size)
+    """
+    with open(output_file, "w") as filout:
+        for index, element in enumerate(contigs):
+            tmp = ">contig_" + str(index) + " len=" + str(element[1]) + "\n"
+            filout.write(tmp)
+            filout.write(fill(element[0]))
+            filout.write("\n")
+
+
+def fill(text, width=80):
+    """Split text with a line return to respect fasta format"""
+    return os.linesep.join(text[i:i+width] for i in range(0, len(text), width))
+
+
+def std():
+    pass
+
+
+def path_average_weight():
+    pass
+
+
+def remove_paths():
+    pass
+
+
+def select_best_path():
+    pass
+
+
+def solve_bubble():
+    pass
+
+
+def simplify_bubbles():
+    pass
+
+
+def solve_entry_tips():
+    pass
+
+
+def solve_out_tips():
+    pass
 
 
 #==============================================================
@@ -183,8 +314,16 @@ def main():
 
     # Kmer dictionary
     kmer_dico = build_kmer_dict(args.fastq_file, args.kmer_size)
-    build_graph(kmer_dico)
 
+    # De Bruijn graph
+    graph = build_graph(kmer_dico)
+
+    # Contigs
+    contigs = get_contigs(graph,
+                          get_starting_nodes(graph), get_sink_nodes(graph))
+
+    # Save contigs
+    save_contigs(args.output_file, contigs)
 
 if __name__ == '__main__':
     main()

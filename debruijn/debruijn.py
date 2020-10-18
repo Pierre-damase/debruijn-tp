@@ -21,7 +21,7 @@
 
 from random import randint
 import argparse
-from operator import itemgetter
+# from operator import itemgetter
 import os
 import sys
 import random
@@ -88,9 +88,12 @@ def read_fastq(fastq):
     """
     with open(fastq, "r") as filin:
         for _ in filin:
-            yield next(filin).strip()
-            next(filin)
-            next(filin)
+            try:
+                yield next(filin).strip()
+                next(filin)
+                next(filin)
+            except StopIteration:
+                return
 
 
 def cut_kmer(sequence, kmer_size):
@@ -109,7 +112,10 @@ def cut_kmer(sequence, kmer_size):
     a generator of kmer for a specific sequence
     """
     for i in range(len(sequence)-kmer_size+1):
-        yield sequence[i:kmer_size+i]
+        try:
+            yield sequence[i:kmer_size+i]
+        except StopIteration:
+            return
 
 
 def build_kmer_dict(fastq, kmer_size):
@@ -414,8 +420,8 @@ def find_bubble(path1, path2):
     """
     entry, out = 0, 0
     flag = 0
-    for i in range(len(path1)):
-        if flag ==  0:
+    for i, _ in enumerate(path1):
+        if flag == 0:
             if path1[i] not in path2:
                 entry = path1[i-1]
                 flag += 1
@@ -454,15 +460,43 @@ def simplify_bubbles(graph):
 
 def solve_entry_tips(graph, starting_nodes):
     """
-    
     graph: nexgraph
-    starting_nodes:
+    starting_nodes: list
     """
-    paths = []
+    pointes = []
+
     for starting in starting_nodes:
-        print(starting)
-        successor = list(graph.successors(starting))
-        pass
+        successor = list(graph.successors(starting))[0]
+        predecessors = list(graph.predecessors(successor))
+
+        while len(predecessors) < 2:
+            successor = list(graph.successors(successor))[0]
+            predecessors = list(graph.predecessors(successor))
+
+            if successor in get_sink_nodes(graph):
+                break
+
+        if successor not in get_sink_nodes(graph):
+            pointes.append((starting, successor))
+
+    while len(pointes) > 1:
+        tmp = [
+            list(nx.all_simple_paths(graph, pointes[0][0], pointes[0][1])),
+            list(nx.all_simple_paths(graph, pointes[1][0], pointes[1][1]))
+        ]
+        path1, path2 = tmp[0][0], tmp[1][0]
+        paths = [path1, path2]
+        path_weight = [
+            path_average_weight(graph, path1),
+            path_average_weight(graph, path2)
+        ]
+        path_length = [len(path1)-1, len(path2)-1]
+        graph = select_best_path(graph, paths, path_length, path_weight,
+                                 delete_entry_node=True)
+        if pointes[0][0] in graph.nodes():
+            pointes.pop(1)
+        else:
+            pointes.pop(0)
 
     return graph
 
@@ -472,9 +506,42 @@ def solve_out_tips(graph, sink_nodes):
     graph: nexgraph
     sink_nodes:
     """
+    pointes = []
+
     for sink in sink_nodes:
-        print(sink)
-        print(list(graph.successors(sink)))
+        predecessor = list(graph.predecessors(sink))[0]
+        successors = list(graph.successors(predecessor))
+
+        while len(successors) < 2:
+            predecessor = list(graph.predecessors(predecessor))[0]
+            successors = list(graph.successors(predecessor))
+
+            if predecessor in get_starting_nodes(graph):
+                break
+
+        if not predecessor in get_starting_nodes(graph):
+            pointes.append((sink, predecessor))
+
+    while len(pointes) > 1:
+        tmp = [
+            list(nx.all_simple_paths(graph, pointes[0][1], pointes[0][0])),
+            list(nx.all_simple_paths(graph, pointes[1][1], pointes[1][0]))
+        ]
+        path1, path2 = tmp[0][0], tmp[1][0]
+        paths = [path1, path2]
+        path_weight = [
+            path_average_weight(graph, path1),
+            path_average_weight(graph, path2)
+        ]
+        path_length = [len(path1)-1, len(path2)-1]
+        graph = select_best_path(graph, paths, path_length, path_weight,
+                                 delete_sink_node=True)
+        if pointes[0][0] in graph.nodes():
+            pointes.pop(1)
+        else:
+            pointes.pop(0)
+
+    return graph
 
 
 #==============================================================
@@ -484,22 +551,6 @@ def main():
     """
     Main program function
     """
-    graph_1 = nx.DiGraph()
-    graph_1.add_weighted_edges_from(
-        [(1, 2, 10), (3, 2, 2), (2, 4, 15), (4, 5, 15)])
-    graph_1 = solve_entry_tips(graph_1, list(get_starting_nodes(graph_1)))
-    print((3, 2) not in graph_1.edges())
-    print((1, 2) in graph_1.edges())
-    graph_2 = nx.DiGraph()
-    graph_2.add_weighted_edges_from([(1, 2, 2), (6, 3, 2), (3, 2, 2),
-                                     (2, 4, 15), (4, 5, 15)])
-    graph_2 = solve_entry_tips(graph_2, list(get_starting_nodes(graph_2)))
-    print((1, 2) not in graph_2.edges())
-    print((6, 3) in graph_2.edges())
-    print((3, 2) in graph_2.edges())
-
-    sys.exit()
-
     # Get arguments
     args = get_arguments()
 
@@ -520,7 +571,6 @@ def main():
 
     # Save contigs
     save_contigs(contigs, args.output_file)
-
 
 
 if __name__ == '__main__':

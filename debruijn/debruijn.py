@@ -264,7 +264,7 @@ def save_contigs(contigs, output_file):
     with open(output_file, "w") as filout:
         for index, element in enumerate(contigs):
             filout.write(">contig_{} len={}\n".format(index, element[1]))
-            filout.write("{}\n".format(element[0]))
+            filout.write("{}\n".format(fill(element[0])))
 
 
 def fill(text, width=80):

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 #    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
+#    itunder the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
 #    (at your option) any later version.
 #    This program is distributed in the hope that it will be useful,
@@ -11,6 +11,10 @@
 #    GNU General Public License for more details.
 #    A copy of the GNU General Public License is available at
 #    http://www.gnu.org/licenses/gpl-3.0.html
+#
+#    Usage
+#    -----
+#      python -m debruijn -i data/eva71_two_reads.fq -k 21 -o contigs.fasta
 
 """Perform assembly based on debruijn graph."""
 
@@ -20,10 +24,10 @@ import argparse
 from operator import itemgetter
 import os
 import sys
-import networkx as nx
-import matplotlib.pyplot as plt
 import random
 import statistics
+import matplotlib.pyplot as plt
+import networkx as nx
 random.seed(9001)
 
 
@@ -104,7 +108,7 @@ def cut_kmer(sequence, kmer_size):
     ------
     a generator of kmer for a specific sequence
     """
-    for i in range(len(sequence)-kmer_size):
+    for i in range(len(sequence)-kmer_size+1):
         yield sequence[i:kmer_size+i]
 
 
@@ -149,17 +153,12 @@ def build_graph(kmer_dico):
 
     Return
     ------
-    graph: nx graph
-        a graph
+    graph: nexgraph
     """
     graph = nx.DiGraph()
     for kmer, poids in kmer_dico.items():
         graph.add_edge(kmer[:-1], kmer[1:], weight=poids)
 
-    # Affichage du graphe: a ne pas faire sur le jeu de données entier
-    plt.subplot(111)
-    nx.draw(graph, with_labels=True, font_weight='bold')
-    plt.savefig("graph")
     return graph
 
 
@@ -167,10 +166,11 @@ def save_graph(graph):
     """
     Save graph in a file.
 
+    Affichage du graphe: a ne pas faire sur le jeu de données entier
+
     Parameter
     ---------
     graph: nexgraph
-        a graph
     """
     plt.subplot(111)
     nx.draw(graph, with_labels=True, font_weight='bold')
@@ -182,7 +182,6 @@ def get_starting_nodes(graph):
     Parameter
     ---------
     graph: nexgraph
-        a graph
 
     Return
     ------
@@ -201,7 +200,6 @@ def get_sink_nodes(graph):
     Parameter
     ---------
     graph: nexgraph
-        a graph
 
     Return
     ------
@@ -222,7 +220,6 @@ def get_contigs(graph, starting_nodes, sink_nodes):
     Parameter
     ---------
     graph: nexgraph
-        a graph
     starting_nodes: list
         list of input nodes
     sink_nodes: list
@@ -247,22 +244,21 @@ def get_contigs(graph, starting_nodes, sink_nodes):
     return contigs
 
 
-def save_contigs(output_file, contigs):
+def save_contigs(contigs, output_file):
     """
+    Save contigs to an output file.
 
     Parameter
     --------
-    output_file: str
-        an output file
     contigs: list
         list of tupple (contig, contig size)
+    output_file: str
+        an output file
     """
     with open(output_file, "w") as filout:
         for index, element in enumerate(contigs):
-            tmp = ">contig_" + str(index) + " len=" + str(element[1]) + "\n"
-            filout.write(tmp)
-            filout.write(fill(element[0]))
-            filout.write("\n")
+            filout.write(">contig_{} len={}\n".format(index, element[1]))
+            filout.write("{}\n".format(element[0]))
 
 
 def fill(text, width=80):
@@ -270,36 +266,215 @@ def fill(text, width=80):
     return os.linesep.join(text[i:i+width] for i in range(0, len(text), width))
 
 
-def std():
-    pass
+def std(values):
+    """
+    Compute the standard deviation.
+
+    Parameter
+    ---------
+    values: list
+        list of value
+
+    Return
+    ------
+    std: float
+    """
+    return statistics.stdev(values)
 
 
-def path_average_weight():
-    pass
+def path_average_weight(graph, path):
+    """
+    Compute the average weight of a given path.
+
+    Parameter
+    ---------
+    graph: nexgraph
+    path: list
+
+    Return
+    ------
+    weight: float
+    """
+    weights = 0
+    for i in range(len(path)-1):
+        weights += graph[path[i]][path[i+1]]["weight"]
+    return weights / (len(path)-1)
 
 
-def remove_paths():
-    pass
+def remove_paths(graph, paths, delete_entry_node, delete_sink_node):
+    """
+    Clear the graph.
+
+    Parameter
+    ---------
+    graph: nexgraph
+    paths: list
+        a list of paths
+    delete_entry_node: boolean
+        True entry node delete
+    delete_sink_node: boolean
+        True sink node delete
+
+    Parameter
+    ---------
+    cleared_graph: nexgrap
+    """
+    for path in paths:
+        if delete_entry_node:
+            graph.remove_node(path[0])
+        if delete_sink_node:
+            graph.remove_node(path[-1])
+        for node in path[1:-1]:
+            if node:
+                graph.remove_node(node)
+    return graph
 
 
-def select_best_path():
-    pass
+def select_best_path(graph, paths, path_length, path_weight,
+                     delete_entry_node=False, delete_sink_node=False):
+    """
+    Clear the graph.
+
+    Parameter
+    ---------
+    graph: nexgraph
+    paths: list
+        a list of paths
+    path_length: list
+        length of each path
+    path_weight: list
+        weight of each path
+    delete_entry_node: boolean
+        True entry node delete
+    delete_sink_node: boolean
+        True sink node delete
+
+    Parameter
+    ---------
+    cleared_graph: nexgrap
+    """
+    # Get index of the "plus léger" path
+    min_weight = [
+        i for i, weight in enumerate(path_weight) if weight == min(path_weight)
+    ]
+    if len(min_weight) == 1:
+        return remove_paths(graph, [paths[min_weight[0]]],
+                            delete_entry_node, delete_sink_node)
+
+    # Get index of the "plus petit" path
+    min_length = [
+        i for i, length in enumerate(path_length) if length == min(path_length)
+    ]
+    if len(min_length) == 1:
+        return remove_paths(graph, [paths[min_length[0]]],
+                            delete_entry_node, delete_sink_node)
+
+    # Select random
+    rand = randint(0, 1)
+    return remove_paths(graph, [paths[rand]],
+                        delete_entry_node, delete_sink_node)
 
 
-def solve_bubble():
-    pass
+def solve_bubble(graph, predecessor, successor):
+    """
+    Clear the graph of a bubble.
+
+    Parameter
+    ---------
+    graph: nexgraph
+    predecessor:
+        predecessor node
+    successor:
+        successor node
+
+    Return
+    ------
+    cleared_graph: nexgrap
+    """
+    tmp = list(nx.all_simple_paths(graph, predecessor, successor))
+
+    while len(tmp) > 1:
+        paths = [tmp[0], tmp[1]]
+        path_weight = [
+            path_average_weight(graph, tmp[0]),
+            path_average_weight(graph, tmp[1])
+        ]
+        path_length = [len(tmp[0])-1, len(tmp[1])-1]
+
+        graph = select_best_path(graph, paths, path_length, path_weight)
+
+        tmp = list(nx.all_simple_paths(graph, predecessor, successor))
+
+    return graph
 
 
-def simplify_bubbles():
-    pass
+def find_bubble(path1, path2):
+    """
+    Permet de déterminer le noeud d'entrée & de sortie d'une bulle, si présente.
+    """
+    entry, out = 0, 0
+    flag = 0
+    for i in range(len(path1)):
+        if flag ==  0:
+            if path1[i] not in path2:
+                entry = path1[i-1]
+                flag += 1
+        else:
+            if path1[i] in path2:
+                out = path1[i]
+                break
+    return entry, out
 
 
-def solve_entry_tips():
-    pass
+def simplify_bubbles(graph):
+    """
+    Simplify the De Bruijn's graph.
+
+    Parameter
+    ---------
+    graph: nexgraph
+
+    Return
+    ------
+    cleared_graph: nexgraph
+    """
+    starting_nodes = get_starting_nodes(graph)
+    sink_nodes = get_sink_nodes(graph)
+
+    for predecessor in starting_nodes:
+        for successor in sink_nodes:
+            paths = list(nx.all_simple_paths(graph, predecessor, successor))
+            while len(paths) > 1:
+                entry, out = find_bubble(paths[0], paths[1])
+                graph = solve_bubble(graph, entry, out)
+                paths = list(nx.all_simple_paths(graph, predecessor, successor))
+
+    return graph
 
 
-def solve_out_tips():
-    pass
+def solve_entry_tips(graph, starting_nodes):
+    """
+    
+    graph: nexgraph
+    starting_nodes:
+    """
+    paths = []
+    for starting in starting_nodes:
+        print(starting)
+        successor = list(graph.successors(starting))
+        pass
+
+    return graph
+
+
+def solve_out_tips(graph, sink_nodes):
+    """
+    graph: nexgraph
+    sink_nodes:
+    """
+    for sink in sink_nodes:
+        print(sink)
+        print(list(graph.successors(sink)))
 
 
 #==============================================================
@@ -309,6 +484,22 @@ def main():
     """
     Main program function
     """
+    graph_1 = nx.DiGraph()
+    graph_1.add_weighted_edges_from(
+        [(1, 2, 10), (3, 2, 2), (2, 4, 15), (4, 5, 15)])
+    graph_1 = solve_entry_tips(graph_1, list(get_starting_nodes(graph_1)))
+    print((3, 2) not in graph_1.edges())
+    print((1, 2) in graph_1.edges())
+    graph_2 = nx.DiGraph()
+    graph_2.add_weighted_edges_from([(1, 2, 2), (6, 3, 2), (3, 2, 2),
+                                     (2, 4, 15), (4, 5, 15)])
+    graph_2 = solve_entry_tips(graph_2, list(get_starting_nodes(graph_2)))
+    print((1, 2) not in graph_2.edges())
+    print((6, 3) in graph_2.edges())
+    print((3, 2) in graph_2.edges())
+
+    sys.exit()
+
     # Get arguments
     args = get_arguments()
 
@@ -318,12 +509,19 @@ def main():
     # De Bruijn graph
     graph = build_graph(kmer_dico)
 
+    # Simplification of De Bruijn's graph
+    graph = simplify_bubbles(graph)
+    graph = solve_entry_tips(graph, get_starting_nodes(graph))
+    graph = solve_out_tips(graph, get_sink_nodes(graph))
+
     # Contigs
     contigs = get_contigs(graph,
                           get_starting_nodes(graph), get_sink_nodes(graph))
 
     # Save contigs
-    save_contigs(args.output_file, contigs)
+    save_contigs(contigs, args.output_file)
+
+
 
 if __name__ == '__main__':
     main()
